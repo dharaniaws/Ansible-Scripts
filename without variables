@@ -1,0 +1,134 @@
+---
+- hosts: localhost
+  become: yes
+  tasks:
+    - name: Create VPC
+      ec2_vpc_net:
+        aws_access_key: ""
+        aws_secret_key: ""
+        cidr_block: 10.0.0.0/16
+        name: Dharani-vpc
+        region: us-east-2
+        state: present  # to delete Vpc then replace absent instead of present
+      register: vpc_result
+
+#### Internet gateway Creation #######
+
+    - name: Create Internet Gateway
+      ec2_vpc_igw:
+        aws_access_key: ""
+        aws_secret_key: ""
+        vpc_id: "{{ vpc_result.vpc.id }}"
+        region: us-east-2
+        state: present
+        tags:
+          Name: Dharani-igw
+      register: igw_result
+
+## Create a VPC public subnet
+
+    - name: Create Public Subnet
+      ec2_vpc_subnet:
+        aws_access_key: ""
+        aws_secret_key: ""
+        vpc_id: "{{ vpc_result.vpc.id }}"
+        region: us-east-2
+        az: us-east-2b  # az is the availability zone
+        state: present
+        cidr: 10.0.0.0/20
+        map_public: yes
+        resource_tags:
+          Name: Dharani-pub
+      register: pubsubnet_result
+
+## Create a VPC private subnet
+
+    - name: Create Private Subnet
+      ec2_vpc_subnet:
+        aws_access_key: ""
+        aws_secret_key: ""
+        vpc_id: "{{ vpc_result.vpc.id }}"
+        region: us-east-2
+        az: us-east-2b  # az is the availability zone
+        state: present
+        cidr: 10.0.16.0/20
+        map_public: no
+        resource_tags:
+          Name: Dharani-pvt
+      register: pvtsubnet_result
+
+## Create a VPC public route table
+
+    - name: Create Public Route Table
+      ec2_vpc_route_table:
+        aws_access_key: ""
+        aws_secret_key: ""
+        vpc_id: "{{ vpc_result.vpc.id }}"
+        region: us-east-2
+        state: present
+        tags:
+          Name: Dharani-pub-rt
+        subnets: [ "{{ pubsubnet_result.subnet.id }}" ]
+        routes:
+          - dest: 0.0.0.0/0
+            gateway_id: "{{ igw_result.gateway_id }}"
+      register: public_route_table
+
+## Create a VPC private route table
+
+    - name: Create Private Route Table
+      ec2_vpc_route_table:
+        aws_access_key: 
+        aws_secret_key: 
+        vpc_id: "{{ vpc_result.vpc.id }}"
+        region: us-east-2
+        state: present
+        tags:
+          Name: Dharani-pvt-rt
+        subnets: [ "{{ pvtsubnet_result.subnet.id }}" ]
+      register: private_route_table
+
+## Create a VPC security group
+
+    - name: Create Security Group
+      ec2_group:
+        aws_access_key: ""
+        aws_secret_key: ""
+        vpc_id: "{{ vpc_result.vpc.id }}"
+        region: us-east-2
+        state: present
+        name: Dharani-sg
+        description: allow
+        tags:
+          Name: Dharani-sg
+        rules:
+          - proto: all
+            cidr_ip: 0.0.0.0/0
+            rule_desc: allow all traffic
+      register: security_group_results
+
+## Tasks for EC2 launch
+
+    - name: Launch EC2 Instance
+      ec2:
+        image: ami-024ebc7de0fc64e44
+        instance_type: t2.micro
+        region: us-east-2
+        wait: yes
+        count: 1
+        state: present
+        vpc_subnet_id: "{{ pubsubnet_result.subnet.id }}"
+        assign_public_ip: yes
+        group_id: "{{ security_group_results.group_id }}"
+        aws_access_key: ""
+        aws_secret_key: ""
+        instance_tags:
+          key_name: "keypair"
+          Name: "Dharani-Ec2"
+        user_data: |
+          #!/bin/bash
+          yum update -y
+          yum install -y git httpd.x86_64
+          systemctl enable httpd
+          systemctl start httpd
+          git clone https://github.com/dharaniaws/ecomm.git /var/www/html/
