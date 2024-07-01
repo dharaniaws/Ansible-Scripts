@@ -1,0 +1,12 @@
+- hosts: localhost
+  become: yes
+  tasks:
+    ## Task to delete the EC2 instance ##
+    - name: Delete the EC2 instance
+      ec2:
+        aws_access_key: ""
+        aws_secret_key: ""
+        instance_ids: ""  # Replace with your instance ID
+        region: "us-east-2"
+        state: "absent"
+      register: ec2_termination
