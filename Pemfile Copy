@@ -1,0 +1,1 @@
+scp -i keypair.pem keypair.pem ec2-user@18.217.1.201:~
